@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>比赛模型提交</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --txt:#e2e8f0; --dim:#94a3b8;
+          --ok:#22c55e; --err:#ef4444; --warn:#f59e0b; --acc:#38bdf8; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font:15px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 22px; margin: 8px 0 4px; }
+  h2 { font-size: 17px; margin: 28px 0 10px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin:14px 0; }
+  .dim { color:var(--dim); font-size:13px; }
+  input[type=text], input[type=password], input[type=file] {
+    width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line);
+    background:#0b1220; color:var(--txt); font-size:14px; margin:6px 0; }
+  button { background:var(--acc); color:#082f49; border:0; border-radius:8px; padding:10px 18px;
+           font-size:14px; font-weight:600; cursor:pointer; margin:6px 6px 0 0; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.ghost { background:transparent; color:var(--acc); border:1px solid var(--acc); }
+  button.danger { background:var(--err); color:#fff; }
+  button.mini { padding:4px 10px; font-size:12px; margin:0; }
+  .btnlike { display:inline-block; background:var(--acc); color:#082f49; border-radius:8px;
+             padding:10px 18px; font-size:14px; font-weight:600; cursor:pointer; }
+  .btnlike:hover { filter:brightness(1.08); }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { color:var(--dim); font-weight:600; white-space:nowrap; }
+  .bar { height:8px; background:#0b1220; border-radius:4px; overflow:hidden; min-width:120px; }
+  .bar i { display:block; height:100%; background:var(--acc); width:0%; transition:width .3s; }
+  .st-done { color:var(--ok); } .st-err { color:var(--err); } .st-warn { color:var(--warn); }
+  code, .mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+  .sha { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; color:var(--dim); word-break:break-all; }
+  .pre { background:#0b1220; border:1px solid var(--line); border-radius:8px; padding:12px;
+         font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; white-space:pre-wrap; word-break:break-all; }
+  .hidden { display:none !important; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  label.opt { display:flex; gap:6px; align-items:center; cursor:pointer; margin:4px 0; font-size:14px; }
+  .toast { position:fixed; top:14px; left:50%; transform:translateX(-50%); padding:10px 22px;
+           border-radius:8px; font-size:14px; z-index:9; display:none; }
+  .toast.err { background:var(--err); color:#fff; } .toast.ok { background:var(--ok); color:#052e16; }
+</style>
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<div class="wrap">
+
+  <!-- 登录 -->
+  <div id="screen-login">
+    <h1>比赛模型提交</h1>
+    <p class="dim">请输入组织者发给你的口令，然后按页面提示提交模型与镜像。</p>
+    <div class="card">
+      <input type="password" id="login-token" placeholder="访问口令" autocomplete="off">
+      <div class="row">
+        <button onclick="doLogin()">进入</button>
+        <span class="dim">口令与链接请通过私信获取</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 提交 -->
+  <div id="screen-submit" class="hidden">
+    <h1>提交模型</h1>
+    <p class="dim">所有文件只会保存到指定目录，上传完成后页面会给出 SHA256 校验码，可与你本机 <code>sha256sum</code> 的结果核对。</p>
+
+    <div class="card" id="step1">
+      <h2 style="margin-top:0">1. 队伍信息</h2>
+      <input type="text" id="team-name" placeholder="队伍名称（支持中文，1-64 字符）" maxlength="64">
+      <h2>2. 模型文件</h2>
+      <div class="row">
+        <label class="btnlike"><input type="file" id="model-dir" webkitdirectory multiple hidden>选择模型文件夹（PC 端）</label>
+        <label class="btnlike"><input type="file" id="model-files" multiple hidden>添加文件（手机端）</label>
+      </div>
+      <p class="dim">PC 端直接选整个模型文件夹；手机端选不了文件夹，点「添加文件」可多次选择，
+      文件会累加到下面的列表，最后一次性提交。</p>
+      <div id="file-basket"></div>
+      <h2>3. 镜像（二选一，可先跳过）</h2>
+      <label class="opt"><input type="radio" name="imgmode" value="none" checked> 暂不提交镜像</label>
+      <label class="opt"><input type="radio" name="imgmode" value="tar"> 上传镜像 tar 文件
+        （本机执行：<code>docker save -o 镜像名.tar 镜像名:标签</code>）</label>
+      <input type="file" id="image-tar" class="hidden">
+      <div class="row">
+        <button id="btn-start" onclick="startSubmit()">开始提交</button>
+      </div>
+      <div id="resume-box" class="hidden" style="margin-top:10px">
+        <span class="st-warn">检测到本浏览器有未完成的上传（队伍：</span><b id="resume-team"></b><span class="st-warn">）。</span>
+        <button class="mini" onclick="resumeUpload()">选择相同的文件夹/文件后点此继续</button>
+      </div>
+    </div>
+
+    <div class="card hidden" id="step2">
+      <h2 style="margin-top:0">上传进度</h2>
+      <div class="row">
+        <div class="bar" style="flex:1"><i id="overall-bar"></i></div>
+        <span class="dim" id="overall-txt">0%</span>
+      </div>
+      <div class="dim" id="overall-stats" style="margin-top:4px;font-size:13px">速度 - · 已传 0 B / 0 B</div>
+      <table id="file-table">
+        <thead><tr><th>文件</th><th>大小</th><th style="width:180px">进度</th><th>SHA256（服务端实测）</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="row" style="margin-top:12px">
+        <button id="btn-complete" class="hidden" onclick="completeSubmit()">完成提交</button>
+        <span class="dim" id="disk-info"></span>
+      </div>
+    </div>
+
+    <div class="card hidden" id="step3">
+      <h2 style="margin-top:0">提交成功</h2>
+      <p>以下是服务端实际计算的文件 SHA256 校验码，可与本机 <code>sha256sum</code> 输出核对：</p>
+      <div class="pre" id="checksum-pre"></div>
+      <button class="ghost" onclick="copyChecksums()">复制校验码</button>
+      <button class="ghost" onclick="logout()">退出</button>
+    </div>
+  </div>
+
+  <!-- 管理 -->
+  <div id="screen-admin" class="hidden">
+    <h1>提交管理（组织者）</h1>
+    <div class="card">
+      <div class="row">
+        <button class="mini" onclick="loadTeams()">刷新</button>
+        <span class="dim" id="admin-disk"></span>
+        <span style="flex:1"></span>
+        <button class="ghost mini" onclick="logout()">退出</button>
+      </div>
+      <table id="team-table">
+        <thead><tr><th>队伍</th><th>大小</th><th>状态</th><th>文件数</th><th>完成时间</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="team-detail" class="hidden" style="margin-top:14px">
+        <h3 id="detail-title" class="mono"></h3>
+        <div class="pre" id="detail-pre"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+/* ---------------- 工具 ---------------- */
+const $ = id => document.getElementById(id);
+function toast(msg, ok) {
+  const t = $("toast");
+  t.textContent = msg; t.className = "toast " + (ok ? "ok" : "err");
+  t.style.display = "block";
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 4000);
+}
+async function api(path, { method = "GET", body, headers = {} } = {}) {
+  const opt = { method, headers: { ...headers } };
+  if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  let j = {}; try { j = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+  return j;
+}
+function fmtSize(n) {
+  if (n == null) return "-";
+  const u = ["B","KB","MB","GB","TB"]; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(n >= 100 || i === 0 ? 0 : 1) + " " + u[i];
+}
+
+/* ---------------- JS SHA256（流式） ---------------- */
+const K256 = new Uint32Array([0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,
+  0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,
+  0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,
+  0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,
+  0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+class Sha256 {
+  constructor() {
+    this.h = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+    this.buf = new Uint8Array(64); this.bufLen = 0; this.total = 0n;
+  }
+  static rotr(x, n) { return (x >>> n) | (x << (32 - n)); }
+  update(data) {
+    this.total += BigInt(data.length);
+    let off = 0;
+    if (this.bufLen > 0) {
+      const n = Math.min(64 - this.bufLen, data.length);
+      this.buf.set(data.subarray(0, n), this.bufLen);
+      this.bufLen += n; off = n;
+      if (this.bufLen === 64) { this.compress(this.buf); this.bufLen = 0; }
+    }
+    for (; off + 64 <= data.length; off += 64) this.compress(data.subarray(off, off + 64));
+    if (off < data.length) { this.buf.set(data.subarray(off), 0); this.bufLen = data.length - off; }
+  }
+  compress(block) {
+    const w = new Uint32Array(64);
+    for (let i = 0; i < 16; i++)
+      w[i] = ((block[i*4] << 24) | (block[i*4+1] << 16) | (block[i*4+2] << 8) | block[i*4+3]) >>> 0;
+    for (let i = 16; i < 64; i++) {
+      const x = w[i-15], y = w[i-2];
+      const s0 = Sha256.rotr(x,7) ^ Sha256.rotr(x,18) ^ (x >>> 3);
+      const s1 = Sha256.rotr(y,17) ^ Sha256.rotr(y,19) ^ (y >>> 10);
+      w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;
+    }
+    let [a,b,c,d,e,f,g,h] = this.h;
+    for (let i = 0; i < 64; i++) {
+      const S1 = Sha256.rotr(e,6) ^ Sha256.rotr(e,11) ^ Sha256.rotr(e,25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + K256[i] + w[i]) >>> 0;
+      const S0 = Sha256.rotr(a,2) ^ Sha256.rotr(a,13) ^ Sha256.rotr(a,22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    this.h[0]=(this.h[0]+a)>>>0; this.h[1]=(this.h[1]+b)>>>0; this.h[2]=(this.h[2]+c)>>>0; this.h[3]=(this.h[3]+d)>>>0;
+    this.h[4]=(this.h[4]+e)>>>0; this.h[5]=(this.h[5]+f)>>>0; this.h[6]=(this.h[6]+g)>>>0; this.h[7]=(this.h[7]+h)>>>0;
+  }
+  digest() {
+    const bitLen = this.total * 8n;
+    this.update(new Uint8Array([0x80]));
+    while (this.bufLen !== 56) this.update(new Uint8Array([0]));
+    const lenBuf = new Uint8Array(8);
+    new DataView(lenBuf.buffer).setBigUint64(0, bitLen % (2n ** 64n), false);
+    this.update(lenBuf);
+    let hex = "";
+    for (const v of this.h) hex += v.toString(16).padStart(8, "0");
+    return hex;
+  }
+}
+async function hashFile(file, onProgress) {
+  const sha = new Sha256();
+  const CH = 8 * 1024 * 1024;
+  for (let pos = 0; pos < file.size; pos += CH) {
+    const buf = new Uint8Array(await file.slice(pos, Math.min(pos + CH, file.size)).arrayBuffer());
+    sha.update(buf);
+    if (onProgress) onProgress(Math.min(pos + buf.byteLength, file.size), file.size);
+    await new Promise(r => setTimeout(r));
+  }
+  return sha.digest();
+}
+
+/* ---------------- 登录 ---------------- */
+async function doLogin() {
+  try {
+    const r = await api("/api/login", { method: "POST", body: { token: $("login-token").value.trim() } });
+    if (r.role === "admin") { $("screen-admin").classList.remove("hidden"); loadTeams(); }
+    else {
+      $("screen-submit").classList.remove("hidden");
+      const saved = localStorage.getItem("submit_resume");
+      if (saved) {
+        const s = JSON.parse(saved);
+        $("resume-team").textContent = s.team;
+        $("resume-box").classList.remove("hidden");
+      }
+    }
+    $("screen-login").classList.add("hidden");
+  } catch (e) { toast(e.message, false); }
+}
+$("login-token").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+function logout() { location.reload(); }
+
+/* ---------------- 提交流程 ---------------- */
+let SID = null, TEAM = null, taskQueue = [], rows = {}, pollTimer = null, checksums = [];
+const basket = [];               // {file, rel}：已选模型文件（文件夹选择 + 多次添加文件合并）
+
+async function reportError(relpath, message) {
+  // 浏览器端报错上报给组织者（管理页可见）；上报本身失败则忽略
+  try {
+    await api("/api/client-error", { method: "POST",
+      body: { sid: SID, relpath: relpath || "", message: String(message).slice(0, 300) } });
+  } catch (e) { /* ignore */ }
+}
+// 分片大小自适应：目标单请求 ≈ 测速的 25s（远小于 Cloudflare 100s 源站超时）。
+// 慢线路自动缩片避免 524，快线路自动扩片减少请求数。
+const CH_MIN = 256 * 1024;        // 下限 256KB：多文件并发时单流更慢，缩片要能缩到更细
+const CH_MAX = 16 * 1024 * 1024;
+let chCur = 4 * 1024 * 1024;      // 当前分片大小（跨文件/跨重试共享）
+const NEED_LOCAL_SHA = 1 * 1024 ** 3;  // >1GB 不预哈希：浏览器算 50GB 的 SHA256 要几十分钟
+const shaCache = {};              // rel+size -> sha256，重试时不重算
+const restartNeeded = {};         // rel -> 该文件需从头重传（上次 SHA 校验/数据超限失败）
+
+/* ---------------- 测速与预计剩余时间 ---------------- */
+let fileMeta = {};                // rel -> 文件大小（本地已知，含尚未 begin 的文件）
+const speedLog = [];              // {t, b}：本次页面已发送字节的累计采样（保留近 30s）
+let cumSent = 0, lastRec = 0, lastTotal = 0;
+function noteSent(bytes) {        // 每成功上传一片调用一次
+  cumSent += bytes;
+  const now = performance.now();
+  speedLog.push({ t: now, b: cumSent });
+  while (speedLog.length > 2 && now - speedLog[0].t > 30000) speedLog.shift();
+  renderStats();
+}
+function curSpeed() {             // 最近 ≤15s 窗口的平均速率（B/s）
+  const now = performance.now();
+  const last = speedLog[speedLog.length - 1];
+  if (!last) return 0;
+  let ref = null;
+  for (const s of speedLog) { if (now - s.t <= 15000) { ref = s; break; } }
+  if (!ref || ref === last) return 0;
+  const dt = (last.t - ref.t) / 1000;
+  return dt >= 1 ? (last.b - ref.b) / dt : 0;
+}
+function fmtEta(sec) {
+  if (!isFinite(sec) || sec <= 0) return "-";
+  sec = Math.ceil(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  if (h > 0) return h + " 小时 " + m + " 分";
+  if (m > 0) return m + " 分 " + s + " 秒";
+  return s + " 秒";
+}
+function renderStats() {
+  const sp = curSpeed();
+  const remain = lastTotal - lastRec;
+  $("overall-stats").textContent =
+    "速度 " + (sp > 0 ? fmtSize(sp) + "/s" : "-") +
+    " · 已传 " + fmtSize(lastRec) + " / " + fmtSize(lastTotal) +
+    (remain > 0 ? " · 预计剩余 " + fmtEta(sp > 0 ? remain / sp : Infinity) : "");
+}
+
+function imgMode() { return document.querySelector('input[name=imgmode]:checked').value; }
+document.querySelectorAll('input[name=imgmode]').forEach(r => r.addEventListener("change", () => {
+  $("image-tar").classList.toggle("hidden", imgMode() !== "tar");
+}));
+
+/* ---------------- 模型文件篮（文件夹 + 多次添加文件，合并为一次提交） ---------------- */
+function addFiles(list) {
+  let added = 0;
+  for (const f of list) {
+    const rel = f.webkitRelativePath || f.name;
+    if (basket.some(b => b.rel === rel && b.file.size === f.size)) continue;
+    basket.push({ file: f, rel }); added++;
+  }
+  renderBasket();
+  return added;
+}
+function renderBasket() {
+  const box = $("file-basket");
+  box.innerHTML = "";
+  if (basket.length === 0) return;
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  thead.innerHTML = "<tr><th>已选文件</th><th>大小</th><th></th></tr>";
+  const tbody = document.createElement("tbody");
+  let total = 0;
+  basket.forEach((b, i) => {
+    total += b.file.size;
+    const tr = document.createElement("tr");
+    const td1 = document.createElement("td");
+    td1.className = "mono"; td1.style.wordBreak = "break-all"; td1.textContent = b.rel;
+    const td2 = document.createElement("td"); td2.textContent = fmtSize(b.file.size);
+    const td3 = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.className = "mini danger"; btn.textContent = "移除";
+    btn.onclick = () => { basket.splice(i, 1); renderBasket(); };
+    td3.appendChild(btn);
+    tr.append(td1, td2, td3);
+    tbody.appendChild(tr);
+  });
+  const ttr = document.createElement("tr");
+  ttr.innerHTML = "<td></td><td colspan=\"2\"></td>";
+  ttr.children[0].textContent = `共 ${basket.length} 个文件`;
+  ttr.children[0].className = "dim";
+  ttr.children[1].textContent = "合计 " + fmtSize(total);
+  ttr.children[1].className = "dim";
+  tbody.appendChild(ttr);
+  table.append(thead, tbody);
+  box.appendChild(table);
+}
+$("model-dir").addEventListener("change", e => {
+  const n = addFiles(e.target.files); e.target.value = "";
+  if (n) toast(`已添加 ${n} 个文件`, true);
+});
+$("model-files").addEventListener("change", e => {
+  const n = addFiles(e.target.files); e.target.value = "";
+  if (n) toast(`已添加 ${n} 个文件`, true);
+});
+
+async function startSubmit() {
+  const team = $("team-name").value.trim();
+  if (!team) return toast("请填写队伍名称", false);
+  try {
+    const r = await api("/api/session", { method: "POST", body: { team } });
+    SID = r.sid; TEAM = r.team;
+    beginUploadFlow(false);
+  } catch (e) { toast(e.message, false); }
+}
+
+function collectFiles() {
+  const list = basket.slice();
+  const mode = imgMode();
+  if (mode === "tar") {
+    const f = $("image-tar").files[0];
+    if (!f) throw new Error("请选择镜像 tar 文件");
+    list.push({ file: f, rel: "image.tar" });
+  }
+  return list;
+}
+
+function beginUploadFlow(isResume) {
+  let list;
+  try { list = collectFiles(); } catch (e) { return toast(e.message, false); }
+  if (list.length === 0) return toast("请选择模型文件夹，或点「添加文件」加入文件", false);
+
+  $("step2").classList.remove("hidden");
+  $("step1").classList.add("hidden");
+  $("step3").classList.add("hidden");
+  const tbody = $("file-table").querySelector("tbody");
+  tbody.innerHTML = "";
+  rows = {};
+  taskQueue = [];
+  fileMeta = {};
+  speedLog.length = 0;
+  cumSent = 0; lastRec = 0; lastTotal = 0;
+  for (const t of list) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="mono" style="word-break:break-all"></td><td></td>
+      <td><div class="row"><div class="bar" style="flex:1"><i></i></div><span class="dim pct">0%</span></div>
+      <div class="stxt dim" style="font-size:12px">等待</div></td>
+      <td class="sha">-</td><td></td>`;
+    tr.children[0].textContent = t.rel;
+    tr.children[1].textContent = fmtSize(t.file.size);
+    tbody.appendChild(tr);
+    rows[t.rel] = tr;
+    fileMeta[t.rel] = t.file.size;
+    taskQueue.push(t);
+  }
+  for (const rel in fileMeta) lastTotal += fileMeta[rel];
+  renderStats();
+  localStorage.setItem("submit_resume", JSON.stringify({ sid: SID, team: TEAM }));
+  runQueue();
+  startPolling();
+}
+
+async function runQueue() {
+  // 文件级并发不设上限：文件夹内所有文件同时上传，浏览器按 HTTP/2 流上限自行排队
+  await Promise.all(taskQueue.map(t => processFile(t, 0)));
+  checkComplete();
+}
+
+function setRow(rel, txt, pct, cls) {
+  const tr = rows[rel];
+  tr.querySelector(".stxt").textContent = txt;
+  tr.querySelector(".stxt").className = "stxt " + (cls || "dim");
+  tr.querySelector(".pct").textContent = Math.round(pct * 100) + "%";
+  tr.querySelector(".bar i").style.width = (pct * 100).toFixed(1) + "%";
+}
+
+async function processFile(t, attempt) {
+  const rel = t.rel;
+  try {
+    let sha = "";
+    if (t.file.size <= NEED_LOCAL_SHA) {
+      const ck = rel + ":" + t.file.size;
+      if (!shaCache[ck]) {
+        setRow(rel, "计算校验码…", 0, "dim");
+        shaCache[ck] = await hashFile(t.file, (d, tot) => setRow(rel, `计算校验码 ${(d/tot*100).toFixed(0)}%`, d / tot, "dim"));
+      }
+      sha = shaCache[ck];
+    } else {
+      setRow(rel, "大文件，跳过本地校验码（服务端核对）", 0, "dim");
+    }
+    let r;
+    const beginBody = { sid: SID, relpath: rel, size: t.file.size, sha256: sha };
+    try {
+      r = await api("/api/file/begin", { method: "POST",
+        headers: restartNeeded[rel] ? { "X-Restart": "1" } : {}, body: beginBody });
+      restartNeeded[rel] = false;
+    } catch (e) {
+      if (String(e.message).includes("X-Restart")) throw e;
+      r = await api("/api/file/begin", { method: "POST", headers: { "X-Restart": "1" }, body: beginBody });
+    }
+    if (r.status === "done") {
+      rows[rel].children[3].textContent = r.sha256 || sha;
+      setRow(rel, "已完成", 1, "st-done");
+      return;
+    }
+    let off = r.offset || 0;
+    let ch = chCur;
+    if (off > 0) setRow(rel, `断点续传（已传 ${fmtSize(off)}）…`, off / t.file.size, "dim");
+    for (; off < t.file.size; ) {
+      const end = Math.min(off + ch, t.file.size);
+      const t0 = performance.now();
+      const buf = await t.file.slice(off, end).arrayBuffer();
+      let resp;
+      try {
+        resp = await fetch("/api/file/chunk", {
+          method: "POST",
+          headers: { "X-Sid": SID, "X-Relpath": encodeURIComponent(rel),
+                     "X-Offset": String(off), "Content-Type": "application/octet-stream" },
+          body: buf,
+        });
+      } catch (netErr) {
+        chCur = Math.max(CH_MIN, Math.floor(chCur / 2));   // 网络中断：缩片后重试
+        throw netErr;
+      }
+      const j = await resp.json().catch(() => ({}));
+      if (resp.status === 409 && typeof j.offset === "number") {
+        // 服务端 offset 漂移（上次请求中断残留部分数据）：重新同步后继续
+        if (j.offset === off) throw new Error("offset 无法同步，请重传该文件");
+        off = j.offset;
+        setRow(rel, `断点续传（已传 ${fmtSize(off)}）…`, off / t.file.size, "dim");
+        continue;
+      }
+      if (!resp.ok) {
+        if (resp.status === 400) restartNeeded[rel] = true;   // 数据超限等：下次从头重传
+        if (resp.status === 524 || resp.status === 504 || resp.status === 502)
+          chCur = Math.max(CH_MIN, Math.floor(chCur / 2));    // 超时类：缩片
+        throw new Error(j.error || ("HTTP " + resp.status));
+      }
+      // 按实测速度调整下片大小：目标单请求 ≈ 25s，远离 100s 超时线
+      const sent = end - off;
+      const secs = Math.max((performance.now() - t0) / 1000, 0.5);
+      const rate = sent / secs;
+      ch = chCur = Math.min(CH_MAX, Math.max(CH_MIN, Math.floor(sent / secs * 25)));
+      off = j.received;
+      noteSent(sent);
+      setRow(rel, off >= t.file.size ? "校验中…"
+        : `上传中… ${fmtSize(rate)}/s（分片 ${fmtSize(ch)}）`, off / t.file.size, "dim");
+      if (j.done) break;
+    }
+    try {
+      const f = await api("/api/file/finalize", { method: "POST", body: { sid: SID, relpath: rel } });
+      rows[rel].children[3].textContent = f.sha256;
+      setRow(rel, "已完成", 1, "st-done");
+    } catch (e) {
+      if (String(e.message).includes("SHA256")) restartNeeded[rel] = true;  // 内容不对：下次从头重传
+      throw e;
+    }
+  } catch (e) {
+    if (attempt < 2) { setRow(rel, "出错，自动重试…", 0, "st-warn"); await new Promise(r => setTimeout(r, 2000)); return processFile(t, attempt + 1); }
+    setRow(rel, "失败：" + e.message, 0, "st-err");
+    reportError(rel, e.message);
+    const btn = document.createElement("button");
+    btn.className = "mini"; btn.textContent = "重试该文件";
+    btn.onclick = () => { btn.remove(); processFile(t, 0); };
+    rows[rel].children[4].appendChild(btn);
+  }
+}
+
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(async () => {
+    try {
+      const s = await api("/api/session?sid=" + SID);
+      $("disk-info").textContent = "服务器磁盘剩余：" + s.disk_free_gb + " GB";
+      updateOverall(s);
+      checkComplete();
+    } catch (e) { /* 网络抖动忽略 */ }
+  }, 3000);
+}
+
+function updateOverall(s) {
+  // 总进度按服务端 received 累计（含未完成文件的已传部分），总量用本地已选文件
+  // （尚未 begin 的文件不在服务端状态里，本地 fileMeta 兜底）
+  const srv = {};
+  for (const f of s.files) srv[f.relpath] = f;
+  let rec = 0, total = 0;
+  for (const rel in fileMeta) {
+    total += fileMeta[rel];
+    const f = srv[rel];
+    if (f) rec += f.status === "done" ? f.size : (f.received || 0);
+  }
+  lastRec = rec; lastTotal = total;
+  const p = total ? rec / total : 0;
+  $("overall-bar").style.width = (p * 100).toFixed(1) + "%";
+  $("overall-txt").textContent = (p * 100).toFixed(1) + "%";
+  renderStats();
+}
+
+let completeChecked = false;
+function checkComplete() {
+  if (completeChecked) return;
+  if (Object.keys(rows).length === 0) return;
+  for (const rel of Object.keys(rows)) {
+    const st = rows[rel].querySelector(".stxt");
+    if (!st.classList.contains("st-done")) return;
+  }
+  doComplete();
+}
+
+async function doComplete() {
+  if (completeChecked) return;
+  completeChecked = true;
+  $("btn-complete").classList.remove("hidden");
+  try {
+    const r = await api("/api/finalize-session", { method: "POST", body: { sid: SID } });
+    checksums = r.checksums;
+    localStorage.removeItem("submit_resume");
+    renderChecksums();
+    $("step2").classList.add("hidden");
+    $("step3").classList.remove("hidden");
+  } catch (e) {
+    completeChecked = false;
+    $("btn-complete").classList.add("hidden");
+    toast(e.message, false);
+    reportError("", e.message);
+  }
+}
+async function completeSubmit() { doComplete(); }
+
+function renderChecksums() {
+  const lines = checksums.map(c => c.sha256 + "  " + c.path + "  (" + fmtSize(c.size) + ")");
+  $("checksum-pre").textContent = lines.join("\n");
+}
+function copyChecksums() {
+  const text = checksums.map(c => c.sha256 + "  " + c.path).join("\n");
+  navigator.clipboard.writeText(text).then(
+    () => toast("已复制（sha256sum 格式，可用 sha256sum -c 核对）", true),
+    () => toast("复制失败，请手动选择复制", false));
+}
+
+async function resumeUpload() {
+  const saved = JSON.parse(localStorage.getItem("submit_resume") || "null");
+  if (!saved) return;
+  try {
+    const r = await api("/api/session", { method: "POST", body: { team: saved.team } });
+    SID = r.sid; TEAM = r.team;
+    beginUploadFlow(true);
+  } catch (e) { toast(e.message, false); }
+}
+
+/* ---------------- 管理页 ---------------- */
+async function loadTeams() {
+  try {
+    const r = await api("/api/admin/teams");
+    $("admin-disk").textContent = "磁盘剩余 " + r.disk_free_gb + " GB";
+    const tbody = $("team-table").querySelector("tbody");
+    tbody.innerHTML = "";
+    for (const t of r.teams) {
+      const tr = document.createElement("tr");
+      let status = t.complete ? '<span class="st-done">已完成</span>' :
+                   (t.uploading ? '<span class="st-warn">上传中</span>' : '<span class="st-err">不完整</span>');
+      const nErr = (t.errors || []).length;
+      const n = t.info ? t.info.files.length : (t.sha256 ? t.sha256.length : 0);
+      tr.innerHTML = `<td class="mono"></td><td></td><td></td><td></td><td></td><td></td>`;
+      tr.children[0].textContent = t.team;
+      tr.children[1].textContent = fmtSize(t.size);
+      tr.children[2].innerHTML = status
+        + (nErr ? `<div class="st-err" style="font-size:11px">⚠ ${nErr} 条客户端报错（点「校验码」查看详情）</div>` : "")
+        + (t.uploading ? `<div class="dim" style="font-size:11px">${JSON.stringify(t.uploading.image || t.uploading.files)}</div>` : "");
+      tr.children[3].textContent = n;
+      tr.children[4].textContent = t.info ? t.info.completed_at : "-";
+      const op = document.createElement("div");
+      const b1 = document.createElement("button");
+      b1.className = "mini ghost"; b1.textContent = "校验码";
+      b1.onclick = () => showDetail(t);
+      const b2 = document.createElement("button");
+      b2.className = "mini danger"; b2.textContent = "删除";
+      b2.onclick = async () => {
+        if (!confirm(`确认删除队伍「${t.team}」的全部数据？不可恢复！`)) return;
+        try { await api("/api/admin/delete", { method: "POST", body: { team: t.team } }); loadTeams(); }
+        catch (e) { toast(e.message, false); }
+      };
+      op.append(b1, b2);
+      tr.children[5].appendChild(op);
+      tbody.appendChild(tr);
+    }
+  } catch (e) { toast(e.message, false); }
+}
+function showDetail(t) {
+  $("team-detail").classList.remove("hidden");
+  $("detail-title").textContent = t.team;
+  let txt;
+  if (t.sha256) txt = t.sha256.map(x => x.sha256 + "  " + x.path).join("\n");
+  else if (t.info) txt = JSON.stringify(t.info, null, 2);
+  else txt = "（尚无校验码：上传未完成）";
+  if (t.errors && t.errors.length) {
+    const errLines = ["== 客户端报错（来自参赛者浏览器，最新 20 条）=="]
+      .concat(t.errors.map(e => e.ts + (e.relpath ? "  [" + e.relpath + "]" : "") + "  " + e.message));
+    txt = errLines.join("\n") + "\n\n" + txt;
+  }
+  $("detail-pre").textContent = txt;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+[Unit]
+Description=Competition submissions web service
+After=network.target
+
+[Service]
+WorkingDirectory=/data/submissions/.service
+# waitress 生产服务器（Flask 开发服务器仅留作文档/应急回退）
+# threads=128：并发队伍 × 文件夹内全部文件并行上传 × 并发分片请求；
+# channel-timeout=600：慢线路分片请求不被 120s 默认值掐断
+ExecStart=/data/submissions/.service/venv/bin/waitress-serve --listen=0.0.0.0:8080 --threads=128 --channel-timeout=600 app:app
+Restart=always
+RestartSec=3
+StandardOutput=append:/data/submissions/logs/service.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Cloudflare quick tunnel for submissions web (backup public route)
+After=network-online.target submissions-web.service
+Wants=submissions-web.service
+
+[Service]
+WorkingDirectory=/data/submissions/.service
+ExecStart=/data/submissions/.service/cloudflared tunnel --url http://127.0.0.1:8080 --no-autoupdate
+Restart=always
+RestartSec=5
+StandardOutput=append:/data/submissions/logs/cloudflared.log
+
+[Install]
+WantedBy=multi-user.target

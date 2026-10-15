@@ -1,0 +1,13 @@
+[Unit]
+Description=Reverse SSH tunnel: <入口机SSH别名>:8080 -> local submissions service:8080
+After=network.target submissions-web.service
+
+[Service]
+ExecStart=/usr/bin/ssh -N -R 0.0.0.0:8080:127.0.0.1:8080 \
+    -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes \
+    -o BatchMode=yes -o ConnectTimeout=10 <入口机SSH别名>
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

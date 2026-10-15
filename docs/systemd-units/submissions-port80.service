@@ -1,0 +1,23 @@
+# 部署在 SSH 入口机 <入口机IP>（不是数据机 <数据机IP>！）
+# 公网 <公网IP>:80 被云 NAT 转到本机 80，本服务再纯 TCP 转发到
+# 数据机的 submissions-web（<数据机IP>:8080）。
+# 安装：
+#   scp relay-port80.py root@<入口机IP>:/opt/submissions-port80/
+#   scp submissions-port80.service root@<入口机IP>:/etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now submissions-port80
+
+[Unit]
+Description=TCP forward :80 -> <数据机IP>:8080 (submissions direct)
+After=network.target
+
+[Service]
+# 部署时填入数据机实际 IP/端口（真实值勿提交入库）
+Environment=RELAY_TARGET_HOST=<数据机IP>
+Environment=RELAY_TARGET_PORT=8080
+ExecStart=/usr/bin/python3 /opt/submissions-port80/relay-port80.py
+Restart=always
+RestartSec=2
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

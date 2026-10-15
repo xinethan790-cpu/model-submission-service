@@ -1,0 +1,25 @@
+# 只提交方案代码与文档：顶层其余条目（队伍数据目录、测试内容，均为运行时产物）
+# 一律不入库。用"全排除+白名单"而不是逐个列名字，新增队伍目录/测试文件自动不入库。
+/*
+!/.gitignore
+!/.agents/
+!/.service/
+!/docs/
+!/logs/
+!/README.md
+
+# 运行时/环境文件
+.service/state/
+.service/tokens.json
+.service/venv/
+.service/cloudflared
+
+# 日志内容（保留目录）
+logs/*
+!logs/.gitkeep
+
+# 杂项
+__pycache__/
+*.pyc
+*.tmp
+*.part
